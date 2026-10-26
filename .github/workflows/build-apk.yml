@@ -67,14 +67,14 @@ jobs:
           Path('local.properties').write_text('\n'.join(k+'='+prop(v) for k,v in values.items())+'\n')
           Path('local.properties').chmod(0o600)
           PY
-      - name: Validate and build all latest Debug ABIs
+      - name: Validate and build latest Debug APK for ARM64
         run: |
           set -o pipefail
-          ./gradlew :app:validateGitSetup :tdlib:tasks :app:testLatestDebugUnitTest assembleLatestDebug --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx6g -XX:ActiveProcessorCount=2 -Dfile.encoding=UTF-8' --stacktrace 2>&1 | tee build-apk.log
+          ./gradlew :app:validateGitSetup :tdlib:tasks :app:testLatestDebugUnitTest assembleLatestDebug -Pabi=arm64 --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx6g -XX:ActiveProcessorCount=2 -Dfile.encoding=UTF-8' --stacktrace 2>&1 | tee build-apk.log
       - uses: actions/upload-artifact@v4
         with:
           name: Telegram-X-latest-debug
-          path: app/build/outputs/apk/**/*.apk
+          path: app/build/outputs/apk/latest/debug/*-arm64-v8a-debug.apk
           if-no-files-found: error
           retention-days: 14
       - name: Safe diagnostic summary

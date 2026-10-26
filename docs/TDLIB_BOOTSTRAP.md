@@ -19,7 +19,7 @@ python3 scripts/bootstrap-tdlib-lfs.py
 ./gradlew assembleLatestDebug --max-workers=4
 ```
 
-For a first device-specific build, the documented `-Pabi=arm64` option reduces resource use without disabling components. The workflow builds all default latest Debug ABIs.
+For a first device-specific build, the documented `-Pabi=arm64` option reduces resource use without disabling components. The workflow builds and uploads one latest Debug APK for ARM64 (`arm64-v8a`).
 
 The submodule helper explicitly uses `--checkout`, because some nested OpenSSL dependencies declare `update=rebase`. A plain recursive update previously produced rebase conflicts. It never tracks remote HEAD; on a shallow-history failure it fetches complete history before retrying pinned checkout. It refuses mismatched or missing gitlinks.
 
