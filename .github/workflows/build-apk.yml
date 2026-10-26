@@ -56,11 +56,14 @@ jobs:
           import os
           from pathlib import Path
           required=['TELEGRAM_API_ID','TELEGRAM_API_HASH']
-          missing=[n for n in required if not os.environ.get(n)]
+          normalized={n:os.environ.get(n,'').strip() for n in required}
+          for name,value in normalized.items():
+              if len(value)>=2 and value[0]==value[-1] and value[0] in "\"'": normalized[name]=value[1:-1].strip()
+          missing=[n for n in required if not normalized[n]]
           if missing: raise SystemExit('Missing repository Actions secrets: '+', '.join(missing))
-          if not os.environ['TELEGRAM_API_ID'].isdigit(): raise SystemExit('TELEGRAM_API_ID must be numeric')
+          if not normalized['TELEGRAM_API_ID'].isdigit(): raise SystemExit('TELEGRAM_API_ID must contain only decimal digits after trimming whitespace and surrounding quotes')
           def prop(v): return v.replace('\\','\\\\').replace('\n','\\n').replace('\r','\\r').replace(' ','\\ ').replace('=','\\=').replace(':','\\:')
-          values={'sdk.dir':os.environ['ANDROID_HOME'],'app.id':'org.thunderdog.challegram','app.name':'Telegram X','telegram.api_id':os.environ['TELEGRAM_API_ID'],'telegram.api_hash':os.environ['TELEGRAM_API_HASH']}
+          values={'sdk.dir':os.environ['ANDROID_HOME'],'app.id':'org.thunderdog.challegram','app.name':'Telegram X','telegram.api_id':normalized['TELEGRAM_API_ID'],'telegram.api_hash':normalized['TELEGRAM_API_HASH']}
           Path('local.properties').write_text('\n'.join(k+'='+prop(v) for k,v in values.items())+'\n')
           Path('local.properties').chmod(0o600)
           PY
