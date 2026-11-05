@@ -59,6 +59,7 @@ class BaseApplication : TgxApplication(), Configuration.Provider {
     )
 
     AppContext.init(applicationContext)
+    org.thunderdog.challegram.autopoll.AutoPollReceiver.resumeIfEnabled(this)
 
     if (!BuildConfig.EXPERIMENTAL) {
       val deviceTokenRetriever = DeviceTokenRetrieverInstance.get()

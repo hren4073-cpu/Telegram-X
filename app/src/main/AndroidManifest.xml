@@ -121,6 +121,8 @@
     </intent>
   </queries>
 
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
   <application
     android:name="org.thunderdog.challegram.BaseApplication"
     android:allowBackup="false"
@@ -138,6 +140,17 @@
     android:enableOnBackInvokedCallback="true"
     tools:targetApi="37"
     tools:ignore="RtlEnabled">
+    <activity android:name=".autopoll.AutoPollSettingsActivity" android:exported="false" android:label="AutoPoll Settings" />
+    <service android:name=".autopoll.AutoPollService" android:exported="false" android:foregroundServiceType="specialUse">
+      <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-enabled continuous Telegram shift poll monitoring and voting" />
+    </service>
+    <receiver android:name=".autopoll.AutoPollReceiver" android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+
 
     <meta-data
       android:name="firebase_analytics_collection_deactivated"

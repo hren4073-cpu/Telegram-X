@@ -598,6 +598,7 @@ public class SettingsController extends ViewController<Void> implements
     ArrayUtils.ensureCapacity(items, 27);
 
     items.add(new ListItem(ListItem.TYPE_EMPTY_OFFSET));
+    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_autopoll, R.drawable.baseline_notifications_24, "AutoPoll Settings"));
     if (Settings.instance().showPeerIds()) {
       items.add(new ListItem(ListItem.TYPE_INFO_SETTING, R.id.btn_peer_id, R.drawable.baseline_identifier_24, R.string.UserId).setContentStrings(R.string.LoadingInformation, R.string.LoadingInformation));
       items.add(new ListItem(ListItem.TYPE_SEPARATOR));
@@ -1138,6 +1139,12 @@ public class SettingsController extends ViewController<Void> implements
       return;
     }
     final int viewId = v.getId();
+    if (viewId == R.id.btn_autopoll) {
+      android.content.Intent intent = new android.content.Intent(context, org.thunderdog.challegram.autopoll.AutoPollSettingsActivity.class);
+      intent.putExtra("account", tdlib.id());
+      context.startActivity(intent);
+      return;
+    }
     if (viewId == R.id.btn_bio) {
       EditBioController c = new EditBioController(context, tdlib);
       c.setArguments(new EditBioController.Arguments(about != null ? about.text : "", 0));

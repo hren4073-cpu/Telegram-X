@@ -1,0 +1,96 @@
+name: Telegram X Debug APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, build/tdlib-bootstrap]
+permissions:
+  contents: read
+concurrency:
+  group: telegram-x-debug-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+          # Initialized recursively below using --checkout. Nested OpenSSL modules
+          # declare update=rebase, which is unsuitable for pinned dependency builds.
+          submodules: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs make clang gperf php-cli nasm yasm autoconf automake libtool pkg-config ninja-build ripgrep
+      - name: Restore pinned recursive submodules and TDLib LFS
+        run: |
+          set -o pipefail
+          scripts/bootstrap-submodules.sh 2>&1 | tee bootstrap-submodules.log
+          python3 scripts/bootstrap-tdlib-lfs.py 2>&1 | tee bootstrap-lfs.log
+          git submodule foreach --recursive 'git lfs pull && git lfs fsck --objects'
+      - name: Install pinned Android SDK and NDK
+        run: |
+          python3 - <<'PY' > sdk-packages.txt
+          from pathlib import Path
+          p=dict(l.split('=',1) for l in Path('version.properties').read_text().splitlines() if l.startswith('version.') and '=' in l)
+          for item in ['platforms;'+p['version.sdk_package'],'platforms;android-'+p['version.sdk_compile']+'.0','build-tools;'+p['version.build_tools'],'ndk;'+p['version.ndk_primary'],'cmake;'+p['version.cmake']]: print(item)
+          PY
+          mapfile -t packages < sdk-packages.txt
+          sdkmanager "${packages[@]}"
+      - name: Configure Telegram API credentials
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          required=['TELEGRAM_API_ID','TELEGRAM_API_HASH']
+          missing=[n for n in required if not os.environ.get(n)]
+          if missing: raise SystemExit('Missing repository Actions secrets: '+', '.join(missing))
+          if not os.environ['TELEGRAM_API_ID'].isdigit(): raise SystemExit('TELEGRAM_API_ID must be numeric')
+          def prop(v): return v.replace('\\','\\\\').replace('\n','\\n').replace('\r','\\r').replace(' ','\\ ').replace('=','\\=').replace(':','\\:')
+          values={'sdk.dir':os.environ['ANDROID_HOME'],'app.id':'org.thunderdog.challegram','app.name':'Telegram X','telegram.api_id':os.environ['TELEGRAM_API_ID'],'telegram.api_hash':os.environ['TELEGRAM_API_HASH']}
+          Path('local.properties').write_text('\n'.join(k+'='+prop(v) for k,v in values.items())+'\n')
+          Path('local.properties').chmod(0o600)
+          PY
+      - name: Validate and build all latest Debug ABIs
+        run: |
+          set -o pipefail
+          ./gradlew :app:validateGitSetup :tdlib:tasks :app:testLatestDebugUnitTest assembleLatestDebug --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx6g -XX:ActiveProcessorCount=2 -Dfile.encoding=UTF-8' --stacktrace 2>&1 | tee build-apk.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Telegram-X-latest-debug
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Safe diagnostic summary
+        if: always()
+        run: |
+          {
+            git rev-parse HEAD
+            git submodule status --recursive
+            java -version 2>&1
+            df -h .
+          } > build-environment.txt
+          echo "Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-diagnostics
+          path: |
+            bootstrap-submodules.log
+            bootstrap-lfs.log
+            build-apk.log
+            build-environment.txt
+            app/build/reports
+            app/build/test-results
+          retention-days: 14

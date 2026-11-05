@@ -773,6 +773,12 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     decrementReferenceCount(REFERENCE_TYPE_NOTIFICATION, JOB_ID_NOTIFICATION);
   }
 
+  /** Keeps this account session alive while its AutoPoll foreground service is enabled. */
+  public void setAutoPollActive (boolean active) {
+    if (active) incrementJobReferenceCount("autopoll");
+    else decrementJobReferenceCount("autopoll");
+  }
+
   void incrementJobReferenceCount (String id) {
     incrementReferenceCount(REFERENCE_TYPE_JOB, id);
   }

@@ -957,6 +957,7 @@ afterEvaluate {
 }
 
 dependencies {
+  implementation(project(":autopoll-core"))
   sinceNougatImplementation(libs.androidx.profileinstaller)
   flavorImplementation(
     libs.androidx.tracing.legacy,

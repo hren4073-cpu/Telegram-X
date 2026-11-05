@@ -29,7 +29,7 @@ abstract class ValidateGitSetupTask : DefaultTask() {
   @TaskAction
   fun validateGitSetup() {
     val mainRepo = requireDir(mainDir.get().asFile)
-    if (!mainRepo.resolve(".git").isDirectory) {
+    if (!mainRepo.resolve(".git").let { it.isDirectory || it.isFile }) {
       fatal("Fetch repository with submodules via git")
     }
     if (mainRepo.absolutePath.any(Char::isWhitespace)) {

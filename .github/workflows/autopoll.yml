@@ -1,0 +1,132 @@
+name: AutoPoll APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/autopoll]
+permissions:
+  contents: read
+concurrency:
+  group: autopoll-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  core-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew -p autopoll-core test --no-daemon --max-workers=2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autopoll-jvm-tests
+          path: autopoll-core/build/test-results
+          retention-days: 14
+  apk:
+    needs: core-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check required Actions secrets
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          AUTOPOLL_KEYSTORE_BASE64: ${{ secrets.AUTOPOLL_KEYSTORE_BASE64 }}
+          AUTOPOLL_STORE_PASSWORD: ${{ secrets.AUTOPOLL_STORE_PASSWORD }}
+          AUTOPOLL_KEY_ALIAS: ${{ secrets.AUTOPOLL_KEY_ALIAS }}
+          AUTOPOLL_KEY_PASSWORD: ${{ secrets.AUTOPOLL_KEY_PASSWORD }}
+        run: |
+          missing=()
+          for name in TELEGRAM_API_ID TELEGRAM_API_HASH AUTOPOLL_KEYSTORE_BASE64 AUTOPOLL_STORE_PASSWORD AUTOPOLL_KEY_ALIAS AUTOPOLL_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then missing+=("$name"); fi
+          done
+          if ((${#missing[@]})); then
+            printf 'Missing Actions secrets: %s\n' "${missing[*]}"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+          lfs: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install native tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs make clang gperf php-cli nasm yasm autoconf automake libtool pkg-config ninja-build ripgrep
+      - name: Restore pinned submodules and TDLib LFS
+        run: |
+          set -o pipefail
+          scripts/bootstrap-submodules.sh 2>&1 | tee bootstrap-submodules.log
+          python3 scripts/bootstrap-tdlib-lfs.py 2>&1 | tee bootstrap-lfs.log
+          git submodule foreach --recursive 'git lfs pull && git lfs fsck --objects'
+      - name: Install pinned Android SDK and NDK
+        run: |
+          python3 - <<'PY' > sdk-packages.txt
+          from pathlib import Path
+          p=dict(l.split('=',1) for l in Path('version.properties').read_text().splitlines() if l.startswith('version.') and '=' in l)
+          for item in ['platforms;'+p['version.sdk_package'],'platforms;android-'+p['version.sdk_compile']+'.0','build-tools;'+p['version.build_tools'],'ndk;'+p['version.ndk_primary'],'cmake;'+p['version.cmake']]: print(item)
+          PY
+          mapfile -t packages < sdk-packages.txt
+          sdkmanager "${packages[@]}"
+      - name: Configure identity and persistent signing
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          AUTOPOLL_KEYSTORE_BASE64: ${{ secrets.AUTOPOLL_KEYSTORE_BASE64 }}
+          AUTOPOLL_STORE_PASSWORD: ${{ secrets.AUTOPOLL_STORE_PASSWORD }}
+          AUTOPOLL_KEY_ALIAS: ${{ secrets.AUTOPOLL_KEY_ALIAS }}
+          AUTOPOLL_KEY_PASSWORD: ${{ secrets.AUTOPOLL_KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, base64
+          names=['TELEGRAM_API_ID','TELEGRAM_API_HASH','AUTOPOLL_KEYSTORE_BASE64','AUTOPOLL_STORE_PASSWORD','AUTOPOLL_KEY_ALIAS','AUTOPOLL_KEY_PASSWORD']
+          normalized={n:os.environ.get(n,'').strip() for n in names}
+          for name,value in normalized.items():
+              if len(value)>=2 and value[0]==value[-1] and value[0] in "\"'": normalized[name]=value[1:-1].strip()
+          missing=[n for n in names if not normalized[n]]
+          if missing: raise SystemExit('Configure repository Actions secrets: '+', '.join(missing))
+          if not normalized['TELEGRAM_API_ID'].isdigit(): raise SystemExit('TELEGRAM_API_ID must contain only decimal digits')
+          def prop(s):
+              return s.replace('\\','\\\\').replace('\n','\\n').replace('\r','\\r').replace('=','\\=').replace(':','\\:').replace(' ','\\ ')
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])
+          key=root/'autopoll.jks';key.write_bytes(base64.b64decode(normalized['AUTOPOLL_KEYSTORE_BASE64'],validate=True));key.chmod(0o600)
+          signing=root/'autopoll-signing.properties'
+          signing.write_text('\n'.join(k+'='+prop(v) for k,v in {'keystore.file':str(key),'keystore.password':normalized['AUTOPOLL_STORE_PASSWORD'],'key.alias':normalized['AUTOPOLL_KEY_ALIAS'],'key.password':normalized['AUTOPOLL_KEY_PASSWORD']}.items())+'\n');signing.chmod(0o600)
+          values={'sdk.dir':os.environ['ANDROID_HOME'],'app.id':'io.github.hren4073.autopoll','app.name':'AutoPoll','app.sources_url':'https://github.com/hren4073-cpu/Telegram-X','app.experimental':'true','telegram.api_id':normalized['TELEGRAM_API_ID'],'telegram.api_hash':normalized['TELEGRAM_API_HASH'],'keystore.file':str(signing)}
+          pathlib.Path('local.properties').write_text('\n'.join(k+'='+prop(v) for k,v in values.items())+'\n')
+          PY
+      - name: Validate, test and assemble arm64 APK
+        run: |
+          set -o pipefail
+          ./gradlew :app:validateGitSetup :app:testLatestDebugUnitTest :app:assembleLatestDebug -Pabi=arm64 --max-workers=2 --no-daemon --stacktrace 2>&1 | tee build-autopoll.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoPoll-arm64-debug
+          path: app/build/outputs/apk/latest/debug/*-arm64-v8a-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autopoll-build-diagnostics
+          path: |
+            build-autopoll.log
+            bootstrap-submodules.log
+            bootstrap-lfs.log
+            app/build/reports
+            app/build/test-results
+          retention-days: 14
+      - name: Run link
+        if: always()
+        run: echo "Run and artifacts https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_STEP_SUMMARY"

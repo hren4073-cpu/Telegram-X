@@ -44,3 +44,5 @@ include(
   ":tests:benchmark",
   ":tests:microbenchmark"
 )
+
+include(":autopoll-core")
