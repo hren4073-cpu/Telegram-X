@@ -30,8 +30,8 @@ No on-device checks or latency measurements have been performed. GetMessage reva
 Configure repository Actions secrets securely (never in chat or tracked files):
 
 - `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` for the fork's Telegram application.
-- `AUTOPOLL_KEYSTORE_BASE64`, `AUTOPOLL_STORE_PASSWORD`, `AUTOPOLL_KEY_ALIAS`, `AUTOPOLL_KEY_PASSWORD` for a single persistent signing key. Back up that key; keep it unchanged for updates.
+- Optional: `AUTOPOLL_KEYSTORE_BASE64`, `AUTOPOLL_STORE_PASSWORD`, `AUTOPOLL_KEY_ALIAS`, `AUTOPOLL_KEY_PASSWORD` for a single persistent signing key. Back up that key; keep it unchanged for updates. If no keystore is supplied, the Debug APK uses Android's standard debug signing key; such APKs from separate CI runs are not guaranteed to update each other in place.
 
-The APK job fails clearly if a secret is missing and does not silently generate a new signing identity. Run `AutoPoll APK` manually or push to `feature/autopoll`. A successful JVM job alone is not an APK build. A built APK alone is not evidence of working background voting.
+The APK job requires only the Telegram API secrets. If an optional keystore is supplied, its three companion signing secrets are also required. Run `AutoPoll APK` manually or push to `feature/autopoll`. A successful JVM job alone is not an APK build. A built APK alone is not evidence of working background voting.
 
 Remaining device checks: login, main/archive target selection, Dry Run examples, live confirmed vote, duplicate TDLib events, options edited before submission, network loss at send, process death after SUBMITTING, database/bag persistence, reboot/update recovery, screen-off behavior and real latency.

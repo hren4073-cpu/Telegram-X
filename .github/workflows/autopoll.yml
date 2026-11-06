@@ -34,13 +34,9 @@ jobs:
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-          AUTOPOLL_KEYSTORE_BASE64: ${{ secrets.AUTOPOLL_KEYSTORE_BASE64 }}
-          AUTOPOLL_STORE_PASSWORD: ${{ secrets.AUTOPOLL_STORE_PASSWORD }}
-          AUTOPOLL_KEY_ALIAS: ${{ secrets.AUTOPOLL_KEY_ALIAS }}
-          AUTOPOLL_KEY_PASSWORD: ${{ secrets.AUTOPOLL_KEY_PASSWORD }}
         run: |
           missing=()
-          for name in TELEGRAM_API_ID TELEGRAM_API_HASH AUTOPOLL_KEYSTORE_BASE64 AUTOPOLL_STORE_PASSWORD AUTOPOLL_KEY_ALIAS AUTOPOLL_KEY_PASSWORD; do
+          for name in TELEGRAM_API_ID TELEGRAM_API_HASH; do
             if [[ -z "${!name:-}" ]]; then missing+=("$name"); fi
           done
           if ((${#missing[@]})); then
@@ -79,7 +75,7 @@ jobs:
           PY
           mapfile -t packages < sdk-packages.txt
           sdkmanager "${packages[@]}"
-      - name: Configure identity and persistent signing
+      - name: Configure identity and optional signing
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
@@ -94,16 +90,23 @@ jobs:
           normalized={n:os.environ.get(n,'').strip() for n in names}
           for name,value in normalized.items():
               if len(value)>=2 and value[0]==value[-1] and value[0] in "\"'": normalized[name]=value[1:-1].strip()
-          missing=[n for n in names if not normalized[n]]
+          missing=[n for n in names[:2] if not normalized[n]]
           if missing: raise SystemExit('Configure repository Actions secrets: '+', '.join(missing))
           if not normalized['TELEGRAM_API_ID'].isdigit(): raise SystemExit('TELEGRAM_API_ID must contain only decimal digits')
           def prop(s):
               return s.replace('\\','\\\\').replace('\n','\\n').replace('\r','\\r').replace('=','\\=').replace(':','\\:').replace(' ','\\ ')
-          root=pathlib.Path(os.environ['RUNNER_TEMP'])
-          key=root/'autopoll.jks';key.write_bytes(base64.b64decode(normalized['AUTOPOLL_KEYSTORE_BASE64'],validate=True));key.chmod(0o600)
-          signing=root/'autopoll-signing.properties'
-          signing.write_text('\n'.join(k+'='+prop(v) for k,v in {'keystore.file':str(key),'keystore.password':normalized['AUTOPOLL_STORE_PASSWORD'],'key.alias':normalized['AUTOPOLL_KEY_ALIAS'],'key.password':normalized['AUTOPOLL_KEY_PASSWORD']}.items())+'\n');signing.chmod(0o600)
-          values={'sdk.dir':os.environ['ANDROID_HOME'],'app.id':'io.github.hren4073.autopoll','app.name':'AutoPoll','app.sources_url':'https://github.com/hren4073-cpu/Telegram-X','app.experimental':'true','telegram.api_id':normalized['TELEGRAM_API_ID'],'telegram.api_hash':normalized['TELEGRAM_API_HASH'],'keystore.file':str(signing)}
+          values={'sdk.dir':os.environ['ANDROID_HOME'],'app.id':'io.github.hren4073.autopoll','app.name':'AutoPoll','app.sources_url':'https://github.com/hren4073-cpu/Telegram-X','app.experimental':'true','telegram.api_id':normalized['TELEGRAM_API_ID'],'telegram.api_hash':normalized['TELEGRAM_API_HASH']}
+          if normalized['AUTOPOLL_KEYSTORE_BASE64']:
+              signing_names=names[3:]
+              missing_signing=[n for n in signing_names if not normalized[n]]
+              if missing_signing: raise SystemExit('Complete optional signing secrets: '+', '.join(missing_signing))
+              root=pathlib.Path(os.environ['RUNNER_TEMP'])
+              key=root/'autopoll.jks';key.write_bytes(base64.b64decode(normalized['AUTOPOLL_KEYSTORE_BASE64'],validate=True));key.chmod(0o600)
+              signing=root/'autopoll-signing.properties'
+              signing.write_text('\n'.join(k+'='+prop(v) for k,v in {'keystore.file':str(key),'keystore.password':normalized['AUTOPOLL_STORE_PASSWORD'],'key.alias':normalized['AUTOPOLL_KEY_ALIAS'],'key.password':normalized['AUTOPOLL_KEY_PASSWORD']}.items())+'\n');signing.chmod(0o600)
+              values['keystore.file']=str(signing)
+          else:
+              print('Using standard Android debug signing')
           pathlib.Path('local.properties').write_text('\n'.join(k+'='+prop(v) for k,v in values.items())+'\n')
           PY
       - name: Validate, test and assemble arm64 APK
